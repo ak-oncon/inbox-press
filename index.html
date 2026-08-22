@@ -403,6 +403,31 @@ function convert(html) {
   const srcBtnCount = dedupeButtons(srcButtonsRaw).length;
 
   // --- text blocks ---
+  // Some Brevo blocks are deliberate "callout boxes" — a bordered, narrower, colored table
+  // wrapping the text (e.g. a highlight box or pull-quote). If we discard that box and force
+  // the page's default background, text authored in a light color for contrast against the
+  // box (often white) becomes unreadable against the plain page background. Detect and keep it.
+  function findCalloutBox(cell) {
+    let node = cell;
+    for (let i = 0; i < 5 && node; i++) {
+      node = node.parentElement;
+      if (node && node.tagName === 'TABLE') {
+        const style = node.getAttribute('style') || '';
+        const hasBorder = /border-style:\s*solid/.test(style) || /border-width:\s*[1-9]/.test(style);
+        const widthAttr = node.getAttribute('width') || '';
+        const isNarrower = widthAttr.includes('%') && parseInt(widthAttr, 10) < 100;
+        if (hasBorder && isNarrower) {
+          const bg = (style.match(/background-color:\s*([^;]+);?/) || [])[1];
+          const borderColor = (style.match(/border-(?:top-)?color:\s*([^;]+);?/) || [])[1];
+          const borderWidth = (style.match(/border-(?:top-)?width:\s*([^;]+);?/) || [])[1];
+          const radius = (style.match(/border-radius:\s*([^;]+);?/) || [])[1];
+          return { bg, borderColor, borderWidth, radius, width: widthAttr };
+        }
+      }
+    }
+    return null;
+  }
+
   const textBlocks = [];
   Array.from(body.querySelectorAll('div')).forEach(div => {
     const parent = div.parentElement;
@@ -410,7 +435,12 @@ function convert(html) {
       const cls = parent.getAttribute('class') || '';
       if (cls.includes('nl2go-default-textstyle') && !div.querySelector('a.default-button')) {
         const align = parent.getAttribute('align') || 'left';
-        textBlocks.push({ el: div, align, idx: orderIndex.get(div) });
+        const cellStyle = parent.getAttribute('style') || '';
+        const ownBg = (cellStyle.match(/background-color:\s*([^;]+);?/) || [])[1];
+        const box = findCalloutBox(parent);
+        const bg = (ownBg && !['#f7fbff', '#ffffff', 'rgb(247, 251, 255)', 'rgb(255, 255, 255)'].includes(ownBg.trim()))
+          ? ownBg.trim() : (box && box.bg ? box.bg.trim() : null);
+        textBlocks.push({ el: div, align, idx: orderIndex.get(div), bg, box });
       }
     }
   });
@@ -458,7 +488,7 @@ function convert(html) {
 
   // --- base items ---
   const baseItems = [];
-  mainTextBlocks.forEach(tb => baseItems.push({ kind: 'text', idx: tb.idx, el: tb.el, align: tb.align }));
+  mainTextBlocks.forEach(tb => baseItems.push({ kind: 'text', idx: tb.idx, el: tb.el, align: tb.align, bg: tb.bg, box: tb.box }));
   buttons.forEach(b => baseItems.push({ kind: 'button', idx: orderIndex.get(b), el: b }));
   imgs.forEach(im => baseItems.push({ kind: 'img', idx: orderIndex.get(im), el: im }));
   if (icons.length) baseItems.push({ kind: 'icons', idx: orderIndex.get(icons[0]), el: icons });
@@ -513,9 +543,25 @@ function convert(html) {
     return str;
   }
 
-  function row(inner, align, extra) {
+  function row(inner, align, extra, bg) {
     extra = extra || '';
-    return `<tr><td style="background-color:#f7fbff; padding:15px 20px; font-family:Raleway, Arial, sans-serif; text-align:${align};${extra}">${inner}</td></tr>`;
+    const background = bg || '#f7fbff';
+    return `<tr><td style="background-color:${background}; padding:15px 20px; font-family:Raleway, Arial, sans-serif; text-align:${align};${extra}">${inner}</td></tr>`;
+  }
+
+  // Renders a preserved "callout box" (bordered, narrower, colored table — e.g. a highlight
+  // box or pull-quote) as a centered bordered table instead of a plain full-width row, so the
+  // box's own background stays paired with whatever text color was authored for contrast on it.
+  function rowWithBox(inner, box) {
+    const width = box.width || '84%';
+    const bg = box.bg ? box.bg.trim() : '#f7fbff';
+    const borderColor = box.borderColor ? box.borderColor.trim() : '#56839f';
+    const borderWidth = box.borderWidth ? box.borderWidth.trim() : '2px';
+    const radius = box.radius ? box.radius.trim() : '4px';
+    return `<tr><td style="background-color:#f7fbff; padding:15px 20px; text-align:center;">` +
+      `<table width="${width}" cellpadding="0" cellspacing="0" border="0" align="center" style="width:${width}; background-color:${bg}; border:${borderWidth} solid ${borderColor}; border-radius:${radius};">` +
+      `<tr><td style="padding:16px 20px; font-family:Raleway, Arial, sans-serif; text-align:left;">${inner}</td></tr>` +
+      `</table></td></tr>`;
   }
 
   function renderImg(el) {
@@ -557,7 +603,11 @@ function convert(html) {
       }).join('');
       rows.push(`<tr><td style="background-color:#f7fbff; padding:15px 20px;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${tds}</tr></table></td></tr>`);
     } else if (item.kind === 'text') {
-      rows.push(row(renderItem(item), item.align));
+      if (item.box && item.box.borderColor) {
+        rows.push(rowWithBox(renderItem(item), item.box));
+      } else {
+        rows.push(row(renderItem(item), item.align, '', item.bg));
+      }
     } else if (item.kind === 'button' || item.kind === 'img') {
       rows.push(row(renderItem(item), 'center'));
     } else if (item.kind === 'icons') {
