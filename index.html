@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inbox Press</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #171a1c;
+    --ink-soft: #4b5457;
+    --paper: #eef1f0;
+    --paper-raised: #ffffff;
+    --line: #d7dcda;
+    --accent: #1b6b6b;
+    --accent-ink: #ffffff;
+    --ok: #1f6b45;
+    --ok-bg: #e3f1e9;
+    --warn: #a8332c;
+    --warn-bg: #f8e6e4;
+    --shadow: 0 1px 2px rgba(23,26,28,0.06), 0 8px 24px rgba(23,26,28,0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e9edec;
+      --ink-soft: #a9b3b2;
+      --paper: #121818;
+      --paper-raised: #1a2222;
+      --line: #2b3535;
+      --accent: #4fb3ab;
+      --accent-ink: #08201d;
+      --ok: #5fbf8f;
+      --ok-bg: #163025;
+      --warn: #e2766d;
+      --warn-bg: #3a1f1c;
+      --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e9edec;
+    --ink-soft: #a9b3b2;
+    --paper: #121818;
+    --paper-raised: #1a2222;
+    --line: #2b3535;
+    --accent: #4fb3ab;
+    --accent-ink: #08201d;
+    --ok: #5fbf8f;
+    --ok-bg: #163025;
+    --warn: #e2766d;
+    --warn-bg: #3a1f1c;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: auto; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Work Sans", -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 56px 24px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  header.masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 24px;
+  }
+  .kicker {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    font-family: "Fraunces", Georgia, serif;
+    font-optical-sizing: auto;
+    font-weight: 600;
+    font-size: clamp(30px, 5vw, 40px);
+    line-height: 1.08;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .lede {
+    font-size: 15.5px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    max-width: 62ch;
+    margin: 0;
+  }
+  .lede code {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.92em;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.05em 0.4em;
+  }
+
+  section { display: flex; flex-direction: column; gap: 14px; }
+  .section-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+
+  .drop {
+    border: 1.5px dashed var(--line);
+    border-radius: 10px;
+    padding: 36px 24px;
+    text-align: center;
+    background: var(--paper-raised);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .drop:hover { border-color: var(--accent); }
+  .drop.drag { border-color: var(--accent); background: var(--ok-bg); }
+  .drop-icon { font-size: 22px; margin-bottom: 8px; opacity: 0.7; }
+  .drop-title { font-size: 15px; font-weight: 500; }
+  .drop-sub { font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; font-family: "IBM Plex Mono", monospace; }
+  input[type=file] { display: none; }
+
+  .actions { display: flex; gap: 10px; align-items: center; }
+  button {
+    font-family: "Work Sans", sans-serif;
+    font-weight: 500;
+    font-size: 14px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 11px 20px;
+    cursor: pointer;
+    transition: filter 0.12s ease, transform 0.05s ease;
+  }
+  button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #convertBtn {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  #convertBtn:hover:not(:disabled) { filter: brightness(1.08); }
+  #copyBtn {
+    background: var(--paper-raised);
+    color: var(--ink);
+    border-color: var(--line);
+  }
+  #copyBtn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .status {
+    display: none;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+    box-shadow: var(--shadow);
+  }
+  .status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+  }
+  .status-row:last-child { border-bottom: none; }
+  .status-row .label { color: var(--ink-soft); }
+  .status-row .value {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 13.5px;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 8px;
+  }
+  .ok { color: var(--ok); }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .warn { color: var(--warn); }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); }
+
+  .editor {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--paper-raised);
+    box-shadow: var(--shadow);
+  }
+  .editor-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 14px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+  }
+  textarea {
+    width: 100%;
+    height: 420px;
+    border: none;
+    resize: vertical;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+    padding: 16px;
+    background: var(--paper-raised);
+    color: var(--ink);
+  }
+  textarea:focus { outline: none; }
+  textarea::placeholder { color: var(--ink-soft); }
+
+  footer.note {
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    line-height: 1.6;
+    border-top: 1px solid var(--line);
+    padding-top: 20px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="kicker">Brevo → Salesforce</div>
+    <h1>Inbox Press</h1>
+    <p class="lede">
+      Flattens a Brevo newsletter export into a single-level table Salesforce won't truncate on send —
+      converts merge fields to <code>{!Contact.X}</code> syntax, enforces one footer unsubscribe link,
+      and presses repeated inline styles into shared classes to shrink the file.
+    </p>
+  </header>
+
+  <section>
+    <div class="section-label">01 — Source file</div>
+    <div class="drop" id="drop">
+      <div class="drop-icon">✉︎</div>
+      <div class="drop-title" id="dropLabel">Click to choose a file, or drag it here</div>
+      <div class="drop-sub">.html exported from Brevo</div>
+      <input type="file" id="fileInput" accept=".html,.htm">
+    </div>
+  </section>
+
+  <section>
+    <div class="section-label">02 — Run</div>
+    <div class="actions">
+      <button id="convertBtn" disabled>Flatten &amp; compact</button>
+      <button id="copyBtn" disabled>Copy to clipboard</button>
+    </div>
+    <div id="statusBox" class="status"></div>
+  </section>
+
+  <section>
+    <div class="section-label">03 — Output</div>
+    <div class="editor">
+      <div class="editor-bar">
+        <span>output.html</span>
+        <span id="editorMeta">—</span>
+      </div>
+      <textarea id="output" placeholder="Converted, Salesforce-ready HTML will appear here." readonly></textarea>
+    </div>
+  </section>
+
+  <footer class="note">
+    Salesforce List Email has silently truncated real sends above roughly 25&nbsp;KB — this tool targets
+    well under that ceiling. Always send a real test before a full list send; the compose preview has
+    shown complete content that the delivered email then cut off.
+  </footer>
+
+</div>
+
+<script>
+const SF_UNSUB_URL = "https://maharishifoundationaustralia.my.salesforce-sites.com/EmailPreferences?key={!Contact.Unsubscribe_Token__c}";
+
+let sourceFile = null;
+let sourceText = null;
+
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const dropLabel = document.getElementById('dropLabel');
+const convertBtn = document.getElementById('convertBtn');
+const copyBtn = document.getElementById('copyBtn');
+const statusBox = document.getElementById('statusBox');
+const output = document.getElementById('output');
+const editorMeta = document.getElementById('editorMeta');
+
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+drop.addEventListener('drop', e => {
+  e.preventDefault();
+  drop.classList.remove('drag');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  sourceFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    sourceText = e.target.result;
+    dropLabel.textContent = `${file.name} (${(file.size/1024).toFixed(1)} KB) — ready`;
+    convertBtn.disabled = false;
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+convertBtn.addEventListener('click', () => {
+  try {
+    const result = convert(sourceText);
+    output.value = result.html;
+    renderStatus(result);
+    copyBtn.disabled = false;
+    editorMeta.textContent = `${(result.finalBytes/1024).toFixed(1)} KB`;
+  } catch (err) {
+    statusBox.style.display = 'block';
+    statusBox.innerHTML = `<div class="status-row"><span class="warn">Conversion failed: ${err.message}</span></div>`;
+    console.error(err);
+  }
+});
+
+copyBtn.addEventListener('click', () => {
+  output.select();
+  navigator.clipboard.writeText(output.value).then(() => {
+    const original = copyBtn.textContent;
+    copyBtn.textContent = 'Copied';
+    setTimeout(() => copyBtn.textContent = original, 1500);
+  });
+});
+
+function byteLength(str) {
+  return new TextEncoder().encode(str).length;
+}
+
+function renderStatus(r) {
+  statusBox.style.display = 'block';
+  const overCeiling = r.finalBytes > 25600;
+  const imgMatch = r.srcImgCount === r.outImgCount;
+  const headMatch = r.srcHeadCount === r.outHeadCount;
+  const btnMatch = r.srcBtnCount === r.outBtnCount;
+  function pill(match, matchLabel, mismatchLabel) {
+    return match ? `<span class="pill ok">✓ ${matchLabel}</span>` : `<span class="pill warn">✗ ${mismatchLabel}</span>`;
+  }
+  function line(label, srcV, outV, match) {
+    return `<div class="status-row"><span class="label">${label}</span><span class="value">${srcV} → ${outV} ${pill(match, 'match', 'dropped something')}</span></div>`;
+  }
+  statusBox.innerHTML = `
+    <div class="status-row">
+      <span class="label">Size</span>
+      <span class="value">${(r.originalBytes/1024).toFixed(1)} KB → ${(r.finalBytes/1024).toFixed(1)} KB
+      ${pill(!overCeiling, 'under 25 KB', 'over the truncation ceiling — consider splitting')}</span>
+    </div>
+    ${line('Images', r.srcImgCount, r.outImgCount, imgMatch)}
+    ${line('Headings', r.srcHeadCount, r.outHeadCount, headMatch)}
+    ${line('Buttons / links', r.srcBtnCount, r.outBtnCount, btnMatch)}
+    <div class="status-row"><span class="label">Unsubscribe links</span><span class="value">${r.unsubCount} ${pill(r.unsubCount === 1, 'exactly one', 'should be exactly one')}</span></div>
+    <div class="status-row"><span class="label">Leftover Brevo tags</span><span class="value">${r.leftoverTags} ${pill(r.leftoverTags === 0, 'none', 'found ' + r.leftoverTags)}</span></div>
+  `;
+}
+
+// ---------- Core conversion logic ----------
+
+function convert(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const body = doc.body;
+
+  const allTags = Array.from(body.querySelectorAll('*'));
+  const orderIndex = new Map();
+  allTags.forEach((t, i) => orderIndex.set(t, i));
+
+  // --- source stats (for the before/after report) ---
+  const srcImgCount = body.querySelectorAll('img').length;
+  const srcHeadCount = body.querySelectorAll('h1,h2,h3,h4').length;
+  const srcButtonsRaw = Array.from(body.querySelectorAll('a.default-button'));
+  const srcBtnCount = dedupeButtons(srcButtonsRaw).length;
+
+  // --- text blocks ---
+  const textBlocks = [];
+  Array.from(body.querySelectorAll('div')).forEach(div => {
+    const parent = div.parentElement;
+    if (parent && (parent.tagName === 'TD' || parent.tagName === 'TH')) {
+      const cls = parent.getAttribute('class') || '';
+      if (cls.includes('nl2go-default-textstyle') && !div.querySelector('a.default-button')) {
+        const align = parent.getAttribute('align') || 'left';
+        textBlocks.push({ el: div, align, idx: orderIndex.get(div) });
+      }
+    }
+  });
+
+  // --- buttons ---
+  const buttons = dedupeButtons(Array.from(body.querySelectorAll('a.default-button')));
+
+  // --- images / icons ---
+  const imgsAll = Array.from(body.querySelectorAll('img'));
+  const imgs = [];
+  const icons = [];
+  imgsAll.forEach(img => {
+    if (img.closest('a.default-button')) return;
+    const src = img.getAttribute('src') || '';
+    if (src.includes('social-icons')) icons.push(img);
+    else imgs.push(img);
+  });
+
+  // --- split off footer text blocks ---
+  const footerMarkers = ['TM Australia', 'This email was sent to', "You've received it", 'All Rights Reserved'];
+  let footerIdx = -1;
+  for (let i = 0; i < textBlocks.length; i++) {
+    const txt = textBlocks[i].el.textContent;
+    if (footerMarkers.some(m => txt.includes(m))) { footerIdx = i; break; }
+  }
+  let footerBlocks = [];
+  let mainTextBlocks = textBlocks;
+  if (footerIdx !== -1) {
+    footerBlocks = textBlocks.slice(footerIdx);
+    mainTextBlocks = textBlocks.slice(0, footerIdx);
+  }
+
+  // --- drop "view in browser" block(s) wherever they appear ---
+  mainTextBlocks = mainTextBlocks.filter(tb => !/view in brows/i.test(tb.el.textContent));
+
+  // --- TM logo: last remaining non-icon image, if small (<=200px wide) ---
+  let tmLogo = null;
+  if (imgs.length) {
+    const last = imgs[imgs.length - 1];
+    const w = parseInt(last.getAttribute('width') || '0', 10);
+    if (w && w <= 200) {
+      tmLogo = imgs.pop();
+    }
+  }
+
+  // --- base items ---
+  const baseItems = [];
+  mainTextBlocks.forEach(tb => baseItems.push({ kind: 'text', idx: tb.idx, el: tb.el, align: tb.align }));
+  buttons.forEach(b => baseItems.push({ kind: 'button', idx: orderIndex.get(b), el: b }));
+  imgs.forEach(im => baseItems.push({ kind: 'img', idx: orderIndex.get(im), el: im }));
+  if (icons.length) baseItems.push({ kind: 'icons', idx: orderIndex.get(icons[0]), el: icons });
+
+  // --- detect multi-column groups: <tr> with 2+ direct th/td children all carrying a width attr ---
+  const colgroups = [];
+  Array.from(body.querySelectorAll('tr')).forEach(tr => {
+    const cells = Array.from(tr.children).filter(c => c.tagName === 'TH' || c.tagName === 'TD');
+    const widthy = cells.filter(c => c.getAttribute('width'));
+    if (cells.length >= 2 && widthy.length === cells.length) {
+      colgroups.push({ tr, cells });
+    }
+  });
+
+  function repOf(item) { return item.kind === 'icons' ? item.el[0] : item.el; }
+
+  const groupedSet = new Set();
+  const groupRows = [];
+  colgroups.forEach(({ cells }) => {
+    const cols = [];
+    let minIdx = null;
+    cells.forEach(cell => {
+      const colItems = [];
+      baseItems.forEach(item => {
+        if (item.kind === 'icons') return;
+        const rep = repOf(item);
+        if (rep === cell || cell.contains(rep)) {
+          colItems.push(item);
+          groupedSet.add(rep);
+        }
+      });
+      colItems.sort((a, b) => a.idx - b.idx);
+      cols.push({ width: cell.getAttribute('width'), items: colItems });
+      if (colItems.length) {
+        const fi = colItems[0].idx;
+        minIdx = minIdx === null ? fi : Math.min(minIdx, fi);
+      }
+    });
+    if (cols.some(c => c.items.length)) groupRows.push({ idx: minIdx, cols });
+  });
+
+  const ungrouped = baseItems.filter(item => !groupedSet.has(repOf(item)));
+  const combined = groupRows.map(g => ({ kind: 'group', idx: g.idx, cols: g.cols }))
+    .concat(ungrouped)
+    .sort((a, b) => a.idx - b.idx);
+
+  // --- merge field conversion ---
+  function mergeFields(str) {
+    str = str.replace(/\{\{\s*contact\.FIRSTNAME\s*\|[^}]*\}\}/g, '{!Contact.FirstName}');
+    str = str.replace(/\{\{\s*contact\.FIRSTNAME\s*\}\}/g, '{!Contact.FirstName}');
+    str = str.replace(/\{\{\s*contact\.EMAIL\s*\}\}/g, '{!Contact.Email}');
+    return str;
+  }
+
+  function row(inner, align, extra) {
+    extra = extra || '';
+    return `<tr><td style="background-color:#f7fbff; padding:15px 20px; font-family:Raleway, Arial, sans-serif; text-align:${align};${extra}">${inner}</td></tr>`;
+  }
+
+  function renderImg(el) {
+    const w = el.getAttribute('width') || '570';
+    const alt = el.getAttribute('alt') || '';
+    const src = el.getAttribute('src');
+    const styleAttr = el.getAttribute('style') || '';
+    const radiusMatch = styleAttr.match(/border-radius:\s*([0-9]+px)/);
+    const radius = radiusMatch ? `border-radius:${radiusMatch[1]};` : '';
+    let tag = `<img src="${src}" width="${w}" alt="${alt}" border="0" style="display:block; width:100%; max-width:${w}px; margin:0 auto; border:none; ${radius}">`;
+    const wrapA = el.closest('a');
+    if (wrapA && !wrapA.classList.contains('default-button')) {
+      tag = `<a href="${wrapA.getAttribute('href') || ''}" target="_blank">${tag}</a>`;
+    }
+    return `<div style="text-align:center;">${tag}</div>`;
+  }
+
+  function renderButton(el) {
+    const href = el.getAttribute('href') || '';
+    const span = el.querySelector('span');
+    const text = (span ? span.textContent : el.textContent).trim();
+    return `<div style="text-align:center; margin:10px 0;"><a href="${href}" target="_blank" style="background-color:#1d4563; color:#ffffff; font-family:arial,helvetica,sans-serif; font-size:16px; font-weight:bold; text-decoration:none; padding:12px 24px; display:inline-block; border-radius:4px;">${text}</a></div>`;
+  }
+
+  function renderItem(item) {
+    if (item.kind === 'text') return mergeFields(item.el.outerHTML);
+    if (item.kind === 'button') return renderButton(item.el);
+    if (item.kind === 'img') return renderImg(item.el);
+  }
+
+  const rows = [];
+  combined.forEach(item => {
+    if (item.kind === 'group') {
+      const tds = item.cols.map(col => {
+        const w = col.width;
+        const widthStyle = (w && w.includes('%')) ? `width:${w.replace('%','').trim()}%;` : `width:${w}px;`;
+        const content = col.items.map(renderItem).join('');
+        return `<td valign="top" style="${widthStyle} padding:0 8px; font-family:Raleway, Arial, sans-serif;">${content}</td>`;
+      }).join('');
+      rows.push(`<tr><td style="background-color:#f7fbff; padding:15px 20px;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${tds}</tr></table></td></tr>`);
+    } else if (item.kind === 'text') {
+      rows.push(row(renderItem(item), item.align));
+    } else if (item.kind === 'button' || item.kind === 'img') {
+      rows.push(row(renderItem(item), 'center'));
+    } else if (item.kind === 'icons') {
+      const links = item.el.map(icon => {
+        const a = icon.closest('a');
+        const href = a ? a.getAttribute('href') : '';
+        const src = icon.getAttribute('src');
+        return `<a href="${href || ''}" target="_blank" style="display:inline-block; margin:0 8px;"><img src="${src}" width="32" height="32" alt="" border="0" style="display:inline-block; width:32px; height:32px; border:none;"></a>`;
+      }).join('');
+      rows.push(row(`<div style="text-align:center;">${links}</div>`, 'center'));
+    }
+  });
+
+  // --- footer ---
+  const footerParts = [];
+  if (tmLogo) {
+    const src = tmLogo.getAttribute('src');
+    footerParts.push(`<div style="text-align:center;"><img src="${src}" width="170" alt="TM logo" border="0" style="display:block; width:100%; max-width:170px; margin:0 auto; border:none;"></div>`);
+  }
+  footerBlocks.forEach(fb => {
+    let h = mergeFields(fb.el.outerHTML);
+    h = h.replace(/<span style="display:\s*none;">[\s\S]*?<\/span>/g, '');
+    h = h.replace(/<a href="\{\{ mirror \}\}"[^>]*>[\s\S]*?<\/a>/g, '');
+    h = h.replace(/<span condition="\{\{ update_profile \}\}">[\s\S]*?<\/span>/g, '');
+    h = h.replace(/<a href="\{\{ update_profile \}\}"[^>]*>[\s\S]*?<\/a>/g, '');
+    h = h.replace(/<a href="\{\{ unsubscribe \}\}"[^>]*>([\s\S]*?)<\/a>/g,
+      (m, inner) => `<a href="${SF_UNSUB_URL}" style="color:#1d4563; text-decoration:underline;">${inner}</a>`);
+    h = h.replace(/<p[^>]*>\s*(<span[^>]*><br\s*\/?>\s*<\/span>)?\s*<\/p>/g, '');
+    footerParts.push(`<div style="text-align:center; font-family:Montserrat, Arial, sans-serif; color:#3b3f44;">${h}</div>`);
+  });
+
+  let footerJoined = footerParts.join('');
+  if (!/Unsubscribe/i.test(footerJoined)) {
+    footerJoined += `<div style="text-align:center; padding-top:10px;"><a href="${SF_UNSUB_URL}" style="color:#1d4563; text-decoration:underline; font-size:12px;">Unsubscribe</a></div>`;
+  }
+  rows.push(row(footerJoined, 'center', ' padding-bottom:30px;'));
+
+  const titleEl = doc.querySelector('title');
+  const title = mergeFields(titleEl ? titleEl.textContent : '');
+
+  let finalHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(title)}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f7fbff; font-family:Raleway, Arial, sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f7fbff">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%; max-width:600px; background-color:#f7fbff;">
+${rows.join('\n')}
+</table>
+</td></tr>
+</table>
+</body>
+</html>
+`;
+
+  const originalBytes = byteLength(html);
+
+  // --- compact: hoist repeated inline styles into <style> classes ---
+  finalHtml = dedupeStyles(finalHtml);
+
+  const finalBytes = byteLength(finalHtml);
+  const outDoc = parser.parseFromString(finalHtml, 'text/html');
+  const outImgCount = outDoc.querySelectorAll('img').length;
+  const outHeadCount = outDoc.querySelectorAll('h1,h2,h3,h4').length;
+  const outBtnCount = countButtons(finalHtml);
+  const unsubCount = (finalHtml.match(/EmailPreferences\?key=/g) || []).length;
+  const leftoverTags = (finalHtml.match(/\{\{/g) || []).length;
+
+  return {
+    html: finalHtml,
+    originalBytes, finalBytes,
+    srcImgCount, outImgCount,
+    srcHeadCount, outHeadCount,
+    srcBtnCount, outBtnCount,
+    unsubCount, leftoverTags
+  };
+}
+
+function countButtons(html) {
+  // after dedupe, buttons share one class; count elements carrying that class (order-independent).
+  // Check this FIRST — the class rule's own CSS text in <style> contains the same substring as the
+  // raw inline style, so checking inline-style occurrences first would false-positive on the CSS rule.
+  const classMatch = html.match(/\.(z\d+)\{background-color:#1d4563;/);
+  if (classMatch) {
+    const cls = classMatch[1];
+    const re = new RegExp(`class="[^"]*\\b${cls}\\b[^"]*"`, 'g');
+    return (html.match(re) || []).length;
+  }
+  // fallback: buttons not yet deduped, count raw inline style occurrences (only valid inside style="...")
+  const styleAttrs = html.match(/style="[^"]*background-color:#1d4563;[^"]*"/g);
+  return styleAttrs ? styleAttrs.length : 0;
+}
+
+function dedupeButtons(list) {
+  const seen = new Set();
+  const out = [];
+  list.forEach(b => {
+    const key = (b.getAttribute('href') || '') + '||' + b.textContent.trim();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(b);
+  });
+  return out;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// hoist style="..." values that repeat >= minCount times into <style> classes
+function dedupeStyles(html, minCount) {
+  minCount = minCount || 2;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const tagsWithStyle = Array.from(doc.querySelectorAll('[style]'));
+  const counts = new Map();
+  tagsWithStyle.forEach(t => {
+    const s = t.getAttribute('style');
+    if (!s || !s.trim()) return;
+    counts.set(s, (counts.get(s) || 0) + 1);
+  });
+  const repeated = Array.from(counts.entries()).filter(([s, c]) => c >= minCount);
+  repeated.sort((a, b) => (b[1] * b[0].length) - (a[1] * a[0].length));
+
+  const classMap = new Map();
+  const cssRules = [];
+  repeated.forEach(([style], i) => {
+    const cls = `z${i}`;
+    classMap.set(style, cls);
+    cssRules.push(`.${cls}{${style}}`);
+  });
+
+  tagsWithStyle.forEach(t => {
+    const s = t.getAttribute('style');
+    if (classMap.has(s)) {
+      const existing = t.getAttribute('class');
+      const newClass = existing ? `${existing} ${classMap.get(s)}` : classMap.get(s);
+      t.setAttribute('class', newClass);
+      t.removeAttribute('style');
+    }
+  });
+
+  if (cssRules.length && doc.head) {
+    const styleTag = doc.createElement('style');
+    styleTag.textContent = cssRules.join('');
+    doc.head.appendChild(styleTag);
+  }
+
+  return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+}
+</script>
+</body>
+</html>
