@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Inbox Press</title>
+<title>Maharishi Foundation Australia</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -239,6 +239,13 @@
     border-top: 1px solid var(--line);
     padding-top: 20px;
   }
+  footer.note .credit {
+    margin-top: 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    opacity: 0.75;
+  }
 
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
@@ -249,8 +256,8 @@
 <div class="wrap">
 
   <header class="masthead">
-    <div class="kicker">Brevo → Salesforce</div>
-    <h1>Inbox Press</h1>
+    <div class="kicker">Newsletter Flattener</div>
+    <h1>Maharishi Foundation Australia</h1>
     <p class="lede">
       Flattens a Brevo newsletter export into a single-level table Salesforce won't truncate on send —
       converts merge fields to <code>{!Contact.X}</code> syntax, enforces one footer unsubscribe link,
@@ -292,6 +299,7 @@
     Salesforce List Email has silently truncated real sends above roughly 25&nbsp;KB — this tool targets
     well under that ceiling. Always send a real test before a full list send; the compose preview has
     shown complete content that the delivered email then cut off.
+    <div class="credit">Developed by Akkaash Pradeep</div>
   </footer>
 
 </div>
