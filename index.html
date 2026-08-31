@@ -601,13 +601,15 @@ function convert(html) {
   }
 
   const rows = [];
+  let usedColumnGroups = false;
   combined.forEach(item => {
     if (item.kind === 'group') {
+      usedColumnGroups = true;
       const tds = item.cols.map(col => {
         const w = col.width;
         const widthStyle = (w && w.includes('%')) ? `width:${w.replace('%','').trim()}%;` : `width:${w}px;`;
         const content = col.items.map(renderItem).join('');
-        return `<td valign="top" style="${widthStyle} padding:0 8px; font-family:Raleway, Arial, sans-serif;">${content}</td>`;
+        return `<td class="col-stack" valign="top" style="${widthStyle} padding:0 8px; font-family:Raleway, Arial, sans-serif;">${content}</td>`;
       }).join('');
       rows.push(`<tr><td style="background-color:#f7fbff; padding:15px 20px;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${tds}</tr></table></td></tr>`);
     } else if (item.kind === 'text') {
@@ -670,6 +672,13 @@ function convert(html) {
   });
   const baseStyleTag = baseClassRules.length ? `<style>${baseClassRules.join(' ')}</style>` : '';
 
+  // Multi-column rows (e.g. an image beside a paragraph) stay side-by-side on desktop, but a
+  // fixed percentage width is unreadable on a narrow phone screen — text gets squeezed into a
+  // sliver and wraps character-by-character. Stack them to full width under 600px instead.
+  const responsiveStyleTag = usedColumnGroups
+    ? `<style>@media (max-width:600px){.col-stack{display:block !important; width:100% !important; padding:0 8px 12px !important; box-sizing:border-box;}}</style>`
+    : '';
+
   let finalHtml = `<!DOCTYPE html>
 <html>
 <head>
@@ -679,6 +688,7 @@ function convert(html) {
 <meta name="supported-color-schemes" content="light">
 <title>${escapeHtml(title)}</title>
 ${baseStyleTag}
+${responsiveStyleTag}
 </head>
 <body style="margin:0; padding:0; background-color:#f7fbff; font-family:Raleway, Arial, sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f7fbff">
