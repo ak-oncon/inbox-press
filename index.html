@@ -656,12 +656,29 @@ function convert(html) {
   const titleEl = doc.querySelector('title');
   const title = mergeFields(titleEl ? titleEl.textContent : '');
 
+  // Some elements (especially headings) rely entirely on the source's <style> block classes
+  // (.default-heading1..4, .default-button, .default, .nl2go-default-textstyle) with no inline
+  // style fallback. Since the source <style> block is discarded, carry these specific base rules
+  // forward so unstyled headings don't collapse to raw browser defaults (huge size, no color) —
+  // which some mail clients then auto-invert into oversized, garishly colored text in dark mode.
+  const baseClassRules = [];
+  Array.from(doc.querySelectorAll('style')).forEach(styleEl => {
+    const css = styleEl.textContent || '';
+    const re = /\.(default-heading[0-4]|default-button|default|nl2go-default-textstyle)\s*\{[^}]*\}/g;
+    let m;
+    while ((m = re.exec(css))) baseClassRules.push(m[0]);
+  });
+  const baseStyleTag = baseClassRules.length ? `<style>${baseClassRules.join(' ')}</style>` : '';
+
   let finalHtml = `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
 <title>${escapeHtml(title)}</title>
+${baseStyleTag}
 </head>
 <body style="margin:0; padding:0; background-color:#f7fbff; font-family:Raleway, Arial, sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f7fbff">
