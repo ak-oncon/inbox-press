@@ -256,12 +256,13 @@
 <div class="wrap">
 
   <header class="masthead">
-    <div class="kicker">Newsletter Flattener</div>
+    <div class="kicker">Salesforce Merge Tool</div>
     <h1>Maharishi Foundation Australia</h1>
     <p class="lede">
-      Flattens a Brevo newsletter export into a single-level table Salesforce won't truncate on send —
-      converts merge fields to <code>{!Contact.X}</code> syntax, enforces one footer unsubscribe link,
-      and presses repeated inline styles into shared classes to shrink the file.
+      Converts a Brevo newsletter export for Salesforce with the smallest possible edit: merge fields
+      become <code>{!Contact.X}</code> syntax, the unsubscribe link points at Salesforce, and the dead
+      "view in browser" link and hidden tracking junk are removed. Everything else — layout, colors,
+      buttons, images — stays exactly as you built it.
     </p>
   </header>
 
@@ -278,7 +279,7 @@
   <section>
     <div class="section-label">02 — Run</div>
     <div class="actions">
-      <button id="convertBtn" disabled>Flatten &amp; compact</button>
+      <button id="convertBtn" disabled>Clean up for Salesforce</button>
       <button id="copyBtn" disabled>Copy to clipboard</button>
     </div>
     <div id="statusBox" class="status"></div>
@@ -291,14 +292,15 @@
         <span>output.html</span>
         <span id="editorMeta">—</span>
       </div>
-      <textarea id="output" placeholder="Converted, Salesforce-ready HTML will appear here." readonly></textarea>
+      <textarea id="output" placeholder="Cleaned-up, Salesforce-ready HTML will appear here." readonly></textarea>
     </div>
   </section>
 
   <footer class="note">
-    Salesforce List Email has silently truncated real sends above roughly 25&nbsp;KB — this tool targets
-    well under that ceiling. Always send a real test before a full list send; the compose preview has
-    shown complete content that the delivered email then cut off.
+    Salesforce List Email has silently truncated real sends above roughly 25&nbsp;KB in the past. This
+    tool no longer restructures your HTML to fight that — it makes the smallest possible edit instead,
+    so large newsletters may still need to be split manually. Always send a real test before a full
+    list send.
     <div class="credit">Developed by Akkaash Pradeep</div>
   </footer>
 
@@ -372,430 +374,84 @@ function renderStatus(r) {
   const overCeiling = r.finalBytes > 25600;
   const imgMatch = r.srcImgCount === r.outImgCount;
   const headMatch = r.srcHeadCount === r.outHeadCount;
-  const btnMatch = r.srcBtnCount === r.outBtnCount;
   function pill(match, matchLabel, mismatchLabel) {
     return match ? `<span class="pill ok">✓ ${matchLabel}</span>` : `<span class="pill warn">✗ ${mismatchLabel}</span>`;
   }
   function line(label, srcV, outV, match) {
-    return `<div class="status-row"><span class="label">${label}</span><span class="value">${srcV} → ${outV} ${pill(match, 'match', 'dropped something')}</span></div>`;
+    return `<div class="status-row"><span class="label">${label}</span><span class="value">${srcV} → ${outV} ${pill(match, 'unchanged', 'changed — check output')}</span></div>`;
   }
   statusBox.innerHTML = `
     <div class="status-row">
       <span class="label">Size</span>
       <span class="value">${(r.originalBytes/1024).toFixed(1)} KB → ${(r.finalBytes/1024).toFixed(1)} KB
-      ${pill(!overCeiling, 'under 25 KB', 'over the truncation ceiling — consider splitting')}</span>
+      ${pill(!overCeiling, 'under 25 KB', 'over the truncation ceiling — consider splitting manually')}</span>
     </div>
     ${line('Images', r.srcImgCount, r.outImgCount, imgMatch)}
     ${line('Headings', r.srcHeadCount, r.outHeadCount, headMatch)}
-    ${line('Buttons / links', r.srcBtnCount, r.outBtnCount, btnMatch)}
     <div class="status-row"><span class="label">Unsubscribe links</span><span class="value">${r.unsubCount} ${pill(r.unsubCount === 1, 'exactly one', 'should be exactly one')}</span></div>
     <div class="status-row"><span class="label">Leftover Brevo tags</span><span class="value">${r.leftoverTags} ${pill(r.leftoverTags === 0, 'none', 'found ' + r.leftoverTags)}</span></div>
   `;
 }
 
-// ---------- Core conversion logic ----------
+// ---------- Core logic: smallest possible edit, nothing restructured ----------
+//
+// Earlier versions of this tool rebuilt the whole document into a flattened, single-level
+// table to dodge Salesforce's send-time truncation. In practice that rewrite kept breaking
+// things it shouldn't have touched — button colors reset to a hardcoded default, whole
+// columns silently dropped, headings losing their styling, layouts not stacking on mobile.
+// This version does the opposite: it never re-parses the document into a new structure. It
+// only finds and edits the exact substrings that must change for Salesforce, leaving every
+// byte of markup, every color, every layout choice exactly as the newsletter was built.
 
 function convert(html) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const body = doc.body;
-
-  const allTags = Array.from(body.querySelectorAll('*'));
-  const orderIndex = new Map();
-  allTags.forEach((t, i) => orderIndex.set(t, i));
-
-  // --- source stats (for the before/after report) ---
-  const srcImgCount = body.querySelectorAll('img').length;
-  const srcHeadCount = body.querySelectorAll('h1,h2,h3,h4').length;
-  const srcButtonsRaw = Array.from(body.querySelectorAll('a.default-button'));
-  const srcBtnCount = dedupeButtons(srcButtonsRaw).length;
-
-  // --- text blocks ---
-  // Some Brevo blocks are deliberate "callout boxes" — a bordered, narrower, colored table
-  // wrapping the text (e.g. a highlight box or pull-quote). If we discard that box and force
-  // the page's default background, text authored in a light color for contrast against the
-  // box (often white) becomes unreadable against the plain page background. Detect and keep it.
-  function findCalloutBox(cell) {
-    let node = cell;
-    for (let i = 0; i < 5 && node; i++) {
-      node = node.parentElement;
-      if (node && node.tagName === 'TABLE') {
-        const style = node.getAttribute('style') || '';
-        const hasBorder = /border-style:\s*solid/.test(style) || /border-width:\s*[1-9]/.test(style);
-        const widthAttr = node.getAttribute('width') || '';
-        const isNarrower = widthAttr.includes('%') && parseInt(widthAttr, 10) < 100;
-        if (hasBorder && isNarrower) {
-          const bg = (style.match(/background-color:\s*([^;]+);?/) || [])[1];
-          const borderColor = (style.match(/border-(?:top-)?color:\s*([^;]+);?/) || [])[1];
-          const borderWidth = (style.match(/border-(?:top-)?width:\s*([^;]+);?/) || [])[1];
-          const radius = (style.match(/border-radius:\s*([^;]+);?/) || [])[1];
-          return { bg, borderColor, borderWidth, radius, width: widthAttr };
-        }
-      }
-    }
-    return null;
-  }
-
-  const textBlocks = [];
-  Array.from(body.querySelectorAll('div')).forEach(div => {
-    const parent = div.parentElement;
-    if (parent && (parent.tagName === 'TD' || parent.tagName === 'TH')) {
-      const cls = parent.getAttribute('class') || '';
-      if (cls.includes('nl2go-default-textstyle') && !div.querySelector('a.default-button')) {
-        const align = parent.getAttribute('align') || 'left';
-        const cellStyle = parent.getAttribute('style') || '';
-        const ownBg = (cellStyle.match(/background-color:\s*([^;]+);?/) || [])[1];
-        const box = findCalloutBox(parent);
-        const bg = (ownBg && !['#f7fbff', '#ffffff', 'rgb(247, 251, 255)', 'rgb(255, 255, 255)'].includes(ownBg.trim()))
-          ? ownBg.trim() : (box && box.bg ? box.bg.trim() : null);
-        textBlocks.push({ el: div, align, idx: orderIndex.get(div), bg, box });
-      }
-    }
-  });
-
-  // --- buttons ---
-  const buttons = dedupeButtons(Array.from(body.querySelectorAll('a.default-button')));
-
-  // --- images / icons ---
-  const imgsAll = Array.from(body.querySelectorAll('img'));
-  const imgs = [];
-  const icons = [];
-  imgsAll.forEach(img => {
-    if (img.closest('a.default-button')) return;
-    const src = img.getAttribute('src') || '';
-    if (src.includes('social-icons')) icons.push(img);
-    else imgs.push(img);
-  });
-
-  // --- split off footer text blocks ---
-  const footerMarkers = ['TM Australia', 'This email was sent to', "You've received it", 'All Rights Reserved'];
-  let footerIdx = -1;
-  for (let i = 0; i < textBlocks.length; i++) {
-    const txt = textBlocks[i].el.textContent;
-    if (footerMarkers.some(m => txt.includes(m))) { footerIdx = i; break; }
-  }
-  let footerBlocks = [];
-  let mainTextBlocks = textBlocks;
-  if (footerIdx !== -1) {
-    footerBlocks = textBlocks.slice(footerIdx);
-    mainTextBlocks = textBlocks.slice(0, footerIdx);
-  }
-
-  // --- drop "view in browser" block(s) wherever they appear ---
-  mainTextBlocks = mainTextBlocks.filter(tb => !/view in brows/i.test(tb.el.textContent));
-
-  // --- TM logo: last remaining non-icon image, if small (<=200px wide) ---
-  let tmLogo = null;
-  if (imgs.length) {
-    const last = imgs[imgs.length - 1];
-    const w = parseInt(last.getAttribute('width') || '0', 10);
-    if (w && w <= 200) {
-      tmLogo = imgs.pop();
-    }
-  }
-
-  // --- base items ---
-  const baseItems = [];
-  mainTextBlocks.forEach(tb => baseItems.push({ kind: 'text', idx: tb.idx, el: tb.el, align: tb.align, bg: tb.bg, box: tb.box }));
-  buttons.forEach(b => baseItems.push({ kind: 'button', idx: orderIndex.get(b), el: b }));
-  imgs.forEach(im => baseItems.push({ kind: 'img', idx: orderIndex.get(im), el: im }));
-  if (icons.length) baseItems.push({ kind: 'icons', idx: orderIndex.get(icons[0]), el: icons });
-
-  // --- detect multi-column groups: <tr> with 2+ direct th/td children all carrying a width attr ---
-  const colgroups = [];
-  Array.from(body.querySelectorAll('tr')).forEach(tr => {
-    const cells = Array.from(tr.children).filter(c => c.tagName === 'TH' || c.tagName === 'TD');
-    const widthy = cells.filter(c => c.getAttribute('width'));
-    if (cells.length >= 2 && widthy.length === cells.length) {
-      colgroups.push({ tr, cells });
-    }
-  });
-
-  function repOf(item) { return item.kind === 'icons' ? item.el[0] : item.el; }
-
-  const groupedSet = new Set();
-  const groupRows = [];
-  colgroups.forEach(({ cells }) => {
-    const cols = [];
-    let minIdx = null;
-    cells.forEach(cell => {
-      const colItems = [];
-      baseItems.forEach(item => {
-        if (item.kind === 'icons') return;
-        const rep = repOf(item);
-        if (rep === cell || cell.contains(rep)) {
-          colItems.push(item);
-          groupedSet.add(rep);
-        }
-      });
-      colItems.sort((a, b) => a.idx - b.idx);
-      cols.push({ width: cell.getAttribute('width'), items: colItems });
-      if (colItems.length) {
-        const fi = colItems[0].idx;
-        minIdx = minIdx === null ? fi : Math.min(minIdx, fi);
-      }
-    });
-    if (cols.some(c => c.items.length)) groupRows.push({ idx: minIdx, cols });
-  });
-
-  const ungrouped = baseItems.filter(item => !groupedSet.has(repOf(item)));
-  const combined = groupRows.map(g => ({ kind: 'group', idx: g.idx, cols: g.cols }))
-    .concat(ungrouped)
-    .sort((a, b) => a.idx - b.idx);
-
-  // --- merge field conversion ---
-  function mergeFields(str) {
-    str = str.replace(/\{\{\s*contact\.FIRSTNAME\s*\|[^}]*\}\}/g, '{!Contact.FirstName}');
-    str = str.replace(/\{\{\s*contact\.FIRSTNAME\s*\}\}/g, '{!Contact.FirstName}');
-    str = str.replace(/\{\{\s*contact\.EMAIL\s*\}\}/g, '{!Contact.Email}');
-    return str;
-  }
-
-  function row(inner, align, extra, bg) {
-    extra = extra || '';
-    const background = bg || '#f7fbff';
-    return `<tr><td style="background-color:${background}; padding:15px 20px; font-family:Raleway, Arial, sans-serif; text-align:${align};${extra}">${inner}</td></tr>`;
-  }
-
-  // Renders a preserved "callout box" (bordered, narrower, colored table — e.g. a highlight
-  // box or pull-quote) as a centered bordered table instead of a plain full-width row, so the
-  // box's own background stays paired with whatever text color was authored for contrast on it.
-  function rowWithBox(inner, box) {
-    const width = box.width || '84%';
-    const bg = box.bg ? box.bg.trim() : '#f7fbff';
-    const borderColor = box.borderColor ? box.borderColor.trim() : '#56839f';
-    const borderWidth = box.borderWidth ? box.borderWidth.trim() : '2px';
-    const radius = box.radius ? box.radius.trim() : '4px';
-    return `<tr><td style="background-color:#f7fbff; padding:15px 20px; text-align:center;">` +
-      `<table width="${width}" cellpadding="0" cellspacing="0" border="0" align="center" style="width:${width}; background-color:${bg}; border:${borderWidth} solid ${borderColor}; border-radius:${radius};">` +
-      `<tr><td style="padding:16px 20px; font-family:Raleway, Arial, sans-serif; text-align:left;">${inner}</td></tr>` +
-      `</table></td></tr>`;
-  }
-
-  function renderImg(el) {
-    const w = el.getAttribute('width') || '570';
-    const alt = el.getAttribute('alt') || '';
-    const src = el.getAttribute('src');
-    const styleAttr = el.getAttribute('style') || '';
-    const radiusMatch = styleAttr.match(/border-radius:\s*([0-9]+px)/);
-    const radius = radiusMatch ? `border-radius:${radiusMatch[1]};` : '';
-    let tag = `<img src="${src}" width="${w}" alt="${alt}" border="0" style="display:block; width:100%; max-width:${w}px; margin:0 auto; border:none; ${radius}">`;
-    const wrapA = el.closest('a');
-    if (wrapA && !wrapA.classList.contains('default-button')) {
-      tag = `<a href="${wrapA.getAttribute('href') || ''}" target="_blank">${tag}</a>`;
-    }
-    return `<div style="text-align:center;">${tag}</div>`;
-  }
-
-  function renderButton(el) {
-    const href = el.getAttribute('href') || '';
-    const span = el.querySelector('span');
-    const text = (span ? span.textContent : el.textContent).trim();
-    return `<div style="text-align:center; margin:10px 0;"><a href="${href}" target="_blank" style="background-color:#1d4563; color:#ffffff; font-family:arial,helvetica,sans-serif; font-size:16px; font-weight:bold; text-decoration:none; padding:12px 24px; display:inline-block; border-radius:4px;">${text}</a></div>`;
-  }
-
-  function renderItem(item) {
-    if (item.kind === 'text') return mergeFields(item.el.outerHTML);
-    if (item.kind === 'button') return renderButton(item.el);
-    if (item.kind === 'img') return renderImg(item.el);
-  }
-
-  const rows = [];
-  let usedColumnGroups = false;
-  combined.forEach(item => {
-    if (item.kind === 'group') {
-      usedColumnGroups = true;
-      const tds = item.cols.map(col => {
-        const w = col.width;
-        const widthStyle = (w && w.includes('%')) ? `width:${w.replace('%','').trim()}%;` : `width:${w}px;`;
-        const content = col.items.map(renderItem).join('');
-        return `<td class="col-stack" valign="top" style="${widthStyle} padding:0 8px; font-family:Raleway, Arial, sans-serif;">${content}</td>`;
-      }).join('');
-      rows.push(`<tr><td style="background-color:#f7fbff; padding:15px 20px;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${tds}</tr></table></td></tr>`);
-    } else if (item.kind === 'text') {
-      if (item.box && item.box.borderColor) {
-        rows.push(rowWithBox(renderItem(item), item.box));
-      } else {
-        rows.push(row(renderItem(item), item.align, '', item.bg));
-      }
-    } else if (item.kind === 'button' || item.kind === 'img') {
-      rows.push(row(renderItem(item), 'center'));
-    } else if (item.kind === 'icons') {
-      const links = item.el.map(icon => {
-        const a = icon.closest('a');
-        const href = a ? a.getAttribute('href') : '';
-        const src = icon.getAttribute('src');
-        return `<a href="${href || ''}" target="_blank" style="display:inline-block; margin:0 8px;"><img src="${src}" width="32" height="32" alt="" border="0" style="display:inline-block; width:32px; height:32px; border:none;"></a>`;
-      }).join('');
-      rows.push(row(`<div style="text-align:center;">${links}</div>`, 'center'));
-    }
-  });
-
-  // --- footer ---
-  const footerParts = [];
-  if (tmLogo) {
-    const src = tmLogo.getAttribute('src');
-    footerParts.push(`<div style="text-align:center;"><img src="${src}" width="170" alt="TM logo" border="0" style="display:block; width:100%; max-width:170px; margin:0 auto; border:none;"></div>`);
-  }
-  footerBlocks.forEach(fb => {
-    let h = mergeFields(fb.el.outerHTML);
-    h = h.replace(/<span style="display:\s*none;">[\s\S]*?<\/span>/g, '');
-    h = h.replace(/<a href="\{\{ mirror \}\}"[^>]*>[\s\S]*?<\/a>/g, '');
-    h = h.replace(/<span condition="\{\{ update_profile \}\}">[\s\S]*?<\/span>/g, '');
-    h = h.replace(/<a href="\{\{ update_profile \}\}"[^>]*>[\s\S]*?<\/a>/g, '');
-    h = h.replace(/<a href="\{\{ unsubscribe \}\}"[^>]*>([\s\S]*?)<\/a>/g,
-      (m, inner) => `<a href="${SF_UNSUB_URL}" style="color:#1d4563; text-decoration:underline;">${inner}</a>`);
-    h = h.replace(/<p[^>]*>\s*(<span[^>]*><br\s*\/?>\s*<\/span>)?\s*<\/p>/g, '');
-    footerParts.push(`<div style="text-align:center; font-family:Montserrat, Arial, sans-serif; color:#3b3f44;">${h}</div>`);
-  });
-
-  let footerJoined = footerParts.join('');
-  if (!/Unsubscribe/i.test(footerJoined)) {
-    footerJoined += `<div style="text-align:center; padding-top:10px;"><a href="${SF_UNSUB_URL}" style="color:#1d4563; text-decoration:underline; font-size:12px;">Unsubscribe</a></div>`;
-  }
-  rows.push(row(footerJoined, 'center', ' padding-bottom:30px;'));
-
-  const titleEl = doc.querySelector('title');
-  const title = mergeFields(titleEl ? titleEl.textContent : '');
-
-  // Some elements (especially headings) rely entirely on the source's <style> block classes
-  // (.default-heading1..4, .default-button, .default, .nl2go-default-textstyle) with no inline
-  // style fallback. Since the source <style> block is discarded, carry these specific base rules
-  // forward so unstyled headings don't collapse to raw browser defaults (huge size, no color) —
-  // which some mail clients then auto-invert into oversized, garishly colored text in dark mode.
-  const baseClassRules = [];
-  Array.from(doc.querySelectorAll('style')).forEach(styleEl => {
-    const css = styleEl.textContent || '';
-    const re = /\.(default-heading[0-4]|default-button|default|nl2go-default-textstyle)\s*\{[^}]*\}/g;
-    let m;
-    while ((m = re.exec(css))) baseClassRules.push(m[0]);
-  });
-  const baseStyleTag = baseClassRules.length ? `<style>${baseClassRules.join(' ')}</style>` : '';
-
-  // Multi-column rows (e.g. an image beside a paragraph) stay side-by-side on desktop, but a
-  // fixed percentage width is unreadable on a narrow phone screen — text gets squeezed into a
-  // sliver and wraps character-by-character. Stack them to full width under 600px instead.
-  const responsiveStyleTag = usedColumnGroups
-    ? `<style>@media (max-width:600px){.col-stack{display:block !important; width:100% !important; padding:0 8px 12px !important; box-sizing:border-box;}}</style>`
-    : '';
-
-  let finalHtml = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="color-scheme" content="light">
-<meta name="supported-color-schemes" content="light">
-<title>${escapeHtml(title)}</title>
-${baseStyleTag}
-${responsiveStyleTag}
-</head>
-<body style="margin:0; padding:0; background-color:#f7fbff; font-family:Raleway, Arial, sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f7fbff">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%; max-width:600px; background-color:#f7fbff;">
-${rows.join('\n')}
-</table>
-</td></tr>
-</table>
-</body>
-</html>
-`;
-
   const originalBytes = byteLength(html);
+  const srcImgCount = (html.match(/<img\b/gi) || []).length;
+  const srcHeadCount = (html.match(/<h[1-4]\b/gi) || []).length;
 
-  // --- compact: hoist repeated inline styles into <style> classes ---
-  finalHtml = dedupeStyles(finalHtml);
+  let out = html;
 
-  const finalBytes = byteLength(finalHtml);
-  const outDoc = parser.parseFromString(finalHtml, 'text/html');
-  const outImgCount = outDoc.querySelectorAll('img').length;
-  const outHeadCount = outDoc.querySelectorAll('h1,h2,h3,h4').length;
-  const outBtnCount = countButtons(finalHtml);
-  const unsubCount = (finalHtml.match(/EmailPreferences\?key=/g) || []).length;
-  const leftoverTags = (finalHtml.match(/\{\{/g) || []).length;
+  // 1. Merge fields → Salesforce syntax
+  out = out.replace(/\{\{\s*contact\.FIRSTNAME\s*\|[^}]*\}\}/g, '{!Contact.FirstName}');
+  out = out.replace(/\{\{\s*contact\.FIRSTNAME\s*\}\}/g, '{!Contact.FirstName}');
+  out = out.replace(/\{\{\s*contact\.EMAIL\s*\}\}/g, '{!Contact.Email}');
+  out = out.replace(/\{\{contact\.EMAIL\}\}/g, '{!Contact.Email}');
+
+  // 2. Strip hidden garbled tracking spans (display:none junk Brevo sometimes leaves behind
+  //    around the preferences/mirror tags) — invisible either way, purely cleanup.
+  out = out.replace(/<span style="display:\s*none;">[\s\S]*?<\/span>/g, '');
+
+  // 3. Remove the "view in browser" link — it points at {{ mirror }}, which has no Salesforce
+  //    equivalent. Left alone it becomes a dead link; removing it is the minimal fix.
+  out = out.replace(/<a href="\{\{\s*mirror\s*\}\}"[^>]*>[\s\S]*?<\/a>/g, '');
+
+  // 4. Remove any visible "update your communications preferences" link — same reasoning:
+  //    {{ update_profile }} has no Salesforce equivalent, and the footer rule is exactly one
+  //    working unsubscribe/preferences link, which is provided in step 5.
+  out = out.replace(/<a href="\{\{\s*update_profile\s*\}\}"[^>]*>[\s\S]*?<\/a>/g, '');
+  out = out.replace(/<span condition="\{\{\s*update_profile\s*\}\}">[\s\S]*?<\/span>/g, '');
+
+  // 5. Point the Unsubscribe link at the real Salesforce URL, keeping its exact visible
+  //    text/markup/style untouched.
+  out = out.replace(/\{\{\s*unsubscribe\s*\}\}/g, SF_UNSUB_URL);
+
+  // 6. Tidy: step 2 can leave a genuinely empty paragraph where the hidden garbled span used
+  //    to sit. A paragraph with nothing inside it (not even a spacer <br>) has zero visual
+  //    effect either way, so it's safe to drop.
+  out = out.replace(/<p[^>]*>\s*<\/p>/g, '');
+
+  const finalBytes = byteLength(out);
+  const outImgCount = (out.match(/<img\b/gi) || []).length;
+  const outHeadCount = (out.match(/<h[1-4]\b/gi) || []).length;
+  const unsubCount = (out.match(/EmailPreferences\?key=/g) || []).length;
+  const leftoverTags = (out.match(/\{\{/g) || []).length;
 
   return {
-    html: finalHtml,
+    html: out,
     originalBytes, finalBytes,
     srcImgCount, outImgCount,
     srcHeadCount, outHeadCount,
-    srcBtnCount, outBtnCount,
     unsubCount, leftoverTags
   };
-}
-
-function countButtons(html) {
-  // after dedupe, buttons share one class; count elements carrying that class (order-independent).
-  // Check this FIRST — the class rule's own CSS text in <style> contains the same substring as the
-  // raw inline style, so checking inline-style occurrences first would false-positive on the CSS rule.
-  const classMatch = html.match(/\.(z\d+)\{background-color:#1d4563;/);
-  if (classMatch) {
-    const cls = classMatch[1];
-    const re = new RegExp(`class="[^"]*\\b${cls}\\b[^"]*"`, 'g');
-    return (html.match(re) || []).length;
-  }
-  // fallback: buttons not yet deduped, count raw inline style occurrences (only valid inside style="...")
-  const styleAttrs = html.match(/style="[^"]*background-color:#1d4563;[^"]*"/g);
-  return styleAttrs ? styleAttrs.length : 0;
-}
-
-function dedupeButtons(list) {
-  const seen = new Set();
-  const out = [];
-  list.forEach(b => {
-    const key = (b.getAttribute('href') || '') + '||' + b.textContent.trim();
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push(b);
-  });
-  return out;
-}
-
-function escapeHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-// hoist style="..." values that repeat >= minCount times into <style> classes
-function dedupeStyles(html, minCount) {
-  minCount = minCount || 2;
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const tagsWithStyle = Array.from(doc.querySelectorAll('[style]'));
-  const counts = new Map();
-  tagsWithStyle.forEach(t => {
-    const s = t.getAttribute('style');
-    if (!s || !s.trim()) return;
-    counts.set(s, (counts.get(s) || 0) + 1);
-  });
-  const repeated = Array.from(counts.entries()).filter(([s, c]) => c >= minCount);
-  repeated.sort((a, b) => (b[1] * b[0].length) - (a[1] * a[0].length));
-
-  const classMap = new Map();
-  const cssRules = [];
-  repeated.forEach(([style], i) => {
-    const cls = `z${i}`;
-    classMap.set(style, cls);
-    cssRules.push(`.${cls}{${style}}`);
-  });
-
-  tagsWithStyle.forEach(t => {
-    const s = t.getAttribute('style');
-    if (classMap.has(s)) {
-      const existing = t.getAttribute('class');
-      const newClass = existing ? `${existing} ${classMap.get(s)}` : classMap.get(s);
-      t.setAttribute('class', newClass);
-      t.removeAttribute('style');
-    }
-  });
-
-  if (cssRules.length && doc.head) {
-    const styleTag = doc.createElement('style');
-    styleTag.textContent = cssRules.join('');
-    doc.head.appendChild(styleTag);
-  }
-
-  return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
 }
 </script>
 </body>
